@@ -1,0 +1,16 @@
+{
+  "name": "nexus",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "dev": "pnpm --parallel --filter @nexus/mobile --filter @nexus/relay dev",
+    "apk": "pnpm --filter @nexus/mobile apk",
+    "relay": "pnpm --filter @nexus/relay start"
+  }
+}
