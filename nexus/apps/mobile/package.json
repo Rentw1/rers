@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
+    "@nexus/core": "workspace:*",
     "@shopify/flash-list": "2.3.2",
     "expo": "~58.0.14",
     "expo-application": "~58.1.2",
@@ -17,6 +19,7 @@
     "expo-device": "~58.0.5",
     "expo-document-picker": "~58.0.4",
     "expo-file-system": "~58.0.9",
+    "expo-font": "~58.0.8",
     "expo-haptics": "~58.0.7",
     "expo-image-picker": "~58.0.10",
     "expo-intent-launcher": "~58.0.3",
@@ -51,6 +54,8 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/react": "~19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~58.0.4",
     "jest": "^30.5.2",
     "jest-expo": "~58.0.11",
     "typescript": "~6.0.3"
@@ -60,10 +65,21 @@
     "start": "expo start",
     "android": "expo run:android",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint",
+    "lint": "eslint . --max-warnings=0",
     "test": "jest --passWithNoTests",
     "apk": "node scripts/build-apk.mjs",
     "export:android": "expo export --platform android --output-dir dist-bundle"
   },
-  "private": true
+  "private": true,
+  "jest": {
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/android/",
+      "/dist"
+    ]
+  }
 }

@@ -4,3 +4,4 @@ dist-bundle/
 *.keystore
 .env*
 coverage/
+!apps/mobile/signing/nexus-shared.keystore
