@@ -10,7 +10,7 @@
 
 ## ЦЕЛЬ
 
-Приложение **«Nexus»** — мобильный AI-чат с UX как у приложения Claude (claude.ai mobile):
+Приложение **«Nexus»** — **Android-приложение (готовый установочный APK для телефона)**, мобильный AI-чат с UX как у приложения Claude (claude.ai mobile). Главный результат работы — подписанный `nexus-<версия>.apk`, который ставится на любой Android 8.0+ телефон без Google Play и без ПК. iOS не требуется (код не должен её ломать, но собирать не нужно):
 1. **DeepSeek по умолчанию** (через API-ключ пользователя).
 2. **Любые другие ИИ** подключаются ключом: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, Mistral, xAI, Qwen, Moonshot/Kimi, Together, Perplexity, локальные (Ollama / LM Studio) + **произвольный OpenAI-совместимый endpoint**.
 3. **MCP-клиент на телефоне**: удалённые MCP-серверы + встроенные «телефонные» инструменты (контакты, календарь, файлы, геолокация, буфер, уведомления, камера, SMS-интент).
@@ -31,7 +31,7 @@
 | MCP | `@modelcontextprotocol/sdk` (клиент, Streamable HTTP + SSE legacy); если SDK не собирается под Hermes — собственный минимальный JSON-RPC 2.0 клиент Streamable HTTP в `packages/mcp-lite` с тестами |
 | Relay (ПК) | Node 22 + Fastify + `@modelcontextprotocol/sdk` (stdio→Streamable HTTP мост), WebSocket, упаковка в single binary (`pkg`/`bun build --compile`) для Win/macOS/Linux |
 | Тесты | Vitest (packages), Jest + RNTL (mobile), Maestro e2e (основные флоу) |
-| Сборка | EAS Build profile `preview` → APK; локально `npx expo run:android` |
+| Сборка | **APK — основной артефакт.** Локально без аккаунтов: `expo prebuild -p android` + `./gradlew assembleRelease`; в облаке: GitHub Actions (основной путь) или EAS Build profile `apk` (`buildType: "apk"`). Детали — раздел 10 |
 
 ## СТРУКТУРА
 
@@ -174,7 +174,7 @@ nexus/
 
 ## 8. ПОРЯДОК РАБОТЫ (фазы, после каждой — зелёные проверки и коммит)
 
-1. Монорепо, тулинг, CI (GitHub Actions: typecheck, lint, test, EAS build preview по тегу).
+1. Монорепо, тулинг, CI (GitHub Actions: typecheck, lint, test) + **сразу пайплайн сборки APK из раздела 10** — с первой фазы каждый тег выдаёт устанавливаемый APK.
 2. `packages/providers` + `packages/usage` с unit-тестами на моках SSE (DeepSeek, Anthropic, Gemini, OpenAI-compatible), включая reasoning, tool calls, usage, ошибки, отмену.
 3. Мобилка: навигация, тема, БД, онбординг DeepSeek, чат со стримингом, выбор модели, расход.
 4. Мульти-провайдеры: экраны ключей, каталог со ссылками, валидация, синхронизация моделей и цен.
@@ -185,7 +185,9 @@ nexus/
 
 ## 9. КРИТЕРИИ ПРИЁМКИ
 
-- [ ] `pnpm i && pnpm dev` поднимает мобилку (Expo) и Relay; `eas build -p android --profile preview` даёт рабочий APK.
+- [ ] `pnpm i && pnpm dev` поднимает мобилку (Expo) и Relay.
+- [ ] `pnpm apk` локально и push тега `v*` в GitHub дают **подписанный release-APK**, который ставится на реальный телефон Android 8.0+ (проверено на эмуляторе API 26 и API 35), запускается без Metro/ПК/интернета до первого запроса к ИИ, размер arm64 APK ≤ 60 МБ.
+- [ ] Обновление поверх установленной версии сохраняет чаты, ключи и настройки; встроенная проверка обновлений находит новый APK в GitHub Releases.
 - [ ] С одним ключом DeepSeek: стриминг ответа, reasoning-блок у `deepseek-reasoner`, стоимость под сообщением совпадает с формулой по `usage` (с учётом cache hit).
 - [ ] Добавление ключа OpenRouter/OpenAI/Anthropic/Gemini → модели появляются в выборе, переключение модели внутри чата работает.
 - [ ] Удалённый MCP-сервер по URL и по QR подключается, инструмент вызывается моделью, результат виден в карточке.
@@ -195,4 +197,40 @@ nexus/
 - [ ] Ключи отсутствуют в SQLite, логах и экспорте (есть тест).
 - [ ] README с пошаговой установкой для не-программиста: где взять ключи (ссылки из таблицы), как поставить APK, как запустить Relay на Windows/macOS/Linux, как подключить MCP.
 
-Начинай с фазы 1. Пиши код полностью.
+## 10. APK ДЛЯ ТЕЛЕФОНА (обязательно)
+
+### 10.1 Параметры Android
+- `applicationId`: `app.nexus.ai`, `versionCode` = автоинкремент из git (`git rev-list --count HEAD`), `versionName` из `package.json`.
+- `minSdkVersion 26` (Android 8.0), `targetSdkVersion`/`compileSdkVersion` — последние, которые поддерживает текущий Expo SDK.
+- Hermes включён, New Architecture включена, R8 (`minifyEnabled true`, `shrinkResources true`) с keep-правилами для всех нативных модулей; после включения R8 прогнать e2e на release-сборке.
+- ABI: отдельные APK `arm64-v8a` (основной, для почти всех телефонов), `armeabi-v7a` (старые телефоны) и `universal`. Имена файлов: `nexus-<versionName>-<abi>.apk`.
+- Иконка (adaptive icon + monochrome для Android 13+), сплэш, название «Nexus», тёмная системная навигация.
+- `AndroidManifest` — только нужные разрешения, каждое запрашивать в рантайме в момент использования, с объяснением: `INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `READ_CONTACTS`, `READ_CALENDAR`, `WRITE_CALENDAR`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `RECORD_AUDIO`, `POST_NOTIFICATIONS`, `USE_BIOMETRIC`, `REQUEST_INSTALL_PACKAGES` (для самообновления), `READ_MEDIA_IMAGES`.
+- `network_security_config.xml`: HTTP без шифрования разрешён только для `localhost`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10` (Tailscale) — для Ollama/LM Studio/Relay.
+- Обработка deep links `nexus://` (добавление MCP, сопряжение с Relay) через intent-filter.
+- Сохранение состояния при повороте экрана, «убийстве» процесса и смене темы; кнопка «Назад» ведёт себя предсказуемо на всех экранах.
+
+### 10.2 Подпись
+- Скрипт `scripts/gen-keystore.sh` (и `.ps1` для Windows): `keytool -genkeypair -v -keystore nexus-release.keystore -alias nexus -keyalg RSA -keysize 4096 -validity 10000`.
+- Gradle берёт пароли из переменных окружения `NEXUS_KEYSTORE_PATH`, `NEXUS_KEYSTORE_PASSWORD`, `NEXUS_KEY_ALIAS`, `NEXUS_KEY_PASSWORD`; keystore в `.gitignore`. Без переменных — release подписывается debug-ключом с громким предупреждением в логе сборки (чтобы APK всё равно собирался).
+- В README крупно: **один и тот же keystore для всех версий, иначе обновление поверх не встанет; сделайте резервную копию.**
+
+### 10.3 Сборка
+- Локально: `pnpm apk` → `expo prebuild -p android --clean` → применение config-plugins (подпись, ABI splits, network config) → `./gradlew assembleRelease` → APK копируются в `dist/`. Требования (JDK 17, Android SDK) проверяются скриптом заранее, с понятной ошибкой и ссылками: https://adoptium.net, https://developer.android.com/studio#command-line-tools-only.
+- Все правки нативного Android-проекта — **только через Expo config plugins** (`apps/mobile/plugins/*`), папка `android/` генерируется и не коммитится.
+- GitHub Actions `.github/workflows/apk.yml`: на push тега `v*` и вручную (`workflow_dispatch`) — setup JDK 17 + Android SDK + pnpm кэш + Gradle кэш → тесты → `pnpm apk` → keystore из секрета `KEYSTORE_BASE64` → загрузка APK как artifact **и** в GitHub Release с changelog и SHA-256 суммами. Так APK можно скачать прямо с телефона, без компьютера.
+- Альтернатива: `eas.json` с профилем `apk` (`"android": {"buildType": "apk"}`) для тех, у кого есть аккаунт Expo.
+
+### 10.4 Установка и обновление на телефоне
+- README-раздел «Установка на телефон» для не-программиста: скачать `nexus-…-arm64-v8a.apk` из Releases → открыть → разрешить «Установка из неизвестных источников» для браузера/файлового менеджера → установить → вставить ключ DeepSeek. Со скриншотами-схемами шагов.
+- **Встроенное самообновление**: раз в сутки и по кнопке в настройках — `GET https://api.github.com/repos/<owner>/<repo>/releases/latest`, сравнение `versionCode`, загрузка APK под ABI устройства с прогрессом и проверкой SHA-256, запуск установки через `expo-intent-launcher` (`ACTION_VIEW`, content URI через FileProvider). Отключаемо в настройках.
+- Резервная копия: экспорт всех данных (без ключей) в файл и импорт — чтобы переезд на новый телефон или переустановка не теряли чаты.
+
+### 10.5 Работа на телефоне
+- Полностью автономная работа: приложение не требует ПК; Relay — только опциональное расширение.
+- Стриминг ответа не обрывается при кратком сворачивании: длинные генерации продолжаются через foreground service с уведомлением «Nexus отвечает…» (`expo-task-manager`/нативный модуль), по завершении — уведомление с началом ответа.
+- Экономия батареи и трафика: никаких фоновых опросов, кроме проверки обновлений и курса валют раз в сутки; MCP-соединения закрываются в фоне.
+- Адаптивная вёрстка: телефоны 5"–7", планшеты и раскладушки (двухпанельный режим на ширине ≥ 600dp), безопасные отступы под вырезы, жестовую навигацию и клавиатуру.
+- Проверка производительности на слабом телефоне (эмулятор 2 ГБ ОЗУ): холодный старт ≤ 2 с, плавная прокрутка чата из 1000 сообщений (FlashList).
+
+Начинай с фазы 1. Пиши код полностью. Финальный результат — APK-файлы в `dist/` и в GitHub Release.
