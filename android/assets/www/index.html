@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Конструктор занятий ДОУ</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">🧩 Конструктор занятий ДОУ</div>
+  <div class="ai-badge" id="aiBadge" title="Подключение ИИ">ИИ: нет</div>
+</header>
+
+<main>
+  <!-- Конструктор -->
+  <section class="scr active" id="scr-build">
+    <div class="card">
+      <h3><span class="step">1</span> Лексическая тема</h3>
+      <div class="row2">
+        <label>Месяц<select id="fMonth"></select></label>
+        <label>Неделя<select id="fWeek"><option value="1">1-я</option><option value="2">2-я</option><option value="3">3-я</option><option value="4">4-я</option></select></label>
+      </div>
+      <label>Тема<select id="fTheme"></select></label>
+      <div id="customBox" class="hidden">
+        <label>Название своей темы<input id="fCustomName" maxlength="80" placeholder="Например: Птицы нашего края"></label>
+        <label>Слова темы (через запятую или с новой строки; можно добавить эмодзи: «сова|🦉»)<textarea id="fCustomWords" rows="3" placeholder="сова|🦉, дятел, синица|🐤, снегирь"></textarea></label>
+      </div>
+      <div class="lvl"><div class="lvl-bar"><div id="lvlFill"></div></div><span id="lvlText"></span></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="step">2</span> Группа</h3>
+      <div class="seg" id="fAge">
+        <button data-v="mid">Средняя<br><small>4–5 лет</small></button>
+        <button data-v="old">Старшая<br><small>5–6 лет</small></button>
+        <button data-v="prep">Подготов.<br><small>6–7 лет</small></button>
+      </div>
+      <label>Направленность группы<select id="fGroup">
+        <option>Логопедическая (компенсирующая)</option>
+        <option>Комбинированная</option>
+        <option>Общеразвивающая</option>
+      </select></label>
+      <label class="slider">Логопедическая составляющая: <b id="logoVal">70%</b>
+        <input type="range" id="fLogo" min="0" max="100" step="10" value="70">
+        <span class="hint"><span>0% — общее занятие</span><span>100% — логопедическое</span></span>
+      </label>
+      <div class="row2" id="logoOpts">
+        <label>Речевое заключение<select id="fConcl"></select></label>
+        <label>Звук<select id="fSound"></select></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="step">3</span> Занятие</h3>
+      <label>Направление<select id="fDir"></select></label>
+      <div class="row2">
+        <label>Тип занятия<select id="fType"><option value="new">Новый материал</option><option value="fix">Закрепление</option><option value="final">Итоговое</option></select></label>
+        <label>Форма<select id="fForm"><option>подгрупповая</option><option>фронтальная</option><option>индивидуальная</option></select></label>
+      </div>
+      <label class="slider">Заданий в рабочем листе: <b id="cntVal">8</b><input type="range" id="fCount" min="4" max="12" step="1" value="8"></label>
+      <label>Пожелания для ИИ (необязательно)<textarea id="fWish" rows="2" placeholder="Например: больше игр с мячом, добавить стихи"></textarea></label>
+    </div>
+
+    <button class="big primary" id="btnBuild">🧩 Собрать занятие</button>
+    <p class="note">Работает без интернета. ИИ (DeepSeek и др.) и нейросеть для картинок подключаются в «Настройках».</p>
+  </section>
+
+  <!-- Результат -->
+  <section class="scr" id="scr-result">
+    <div class="tabs" id="tabs">
+      <button data-tab="sheet" class="on">Рабочий лист</button>
+      <button data-tab="konspekt">Конспект</button>
+      <button data-tab="parents">Родителям</button>
+    </div>
+    <div class="toolbar">
+      <button id="btnAi">✨ ИИ-версия</button>
+      <button id="btnAiAll">✨ Всё с ИИ</button>
+      <button id="btnRevert" class="hidden">↩ Встроенный</button>
+      <button id="btnWord">📄 Word</button>
+      <button id="btnPdf">🖨️ PDF</button>
+      <button id="btnShare">📤 Отправить</button>
+      <button id="btnGemPrompt">🎨 Gemini</button>
+      <label class="tgl"><input type="checkbox" id="tAnswers" checked> Ответы</label>
+      <label class="tgl"><input type="checkbox" id="tReplace"> Заменять картинки</label>
+      <input type="file" id="fOwnPic" accept="image/*" class="hidden">
+    </div>
+    <div class="addrow" id="addRow">
+      <select id="addSel"></select><button id="btnAdd">＋ Задание</button><button id="btnNewVar">↻ Все слова заново</button>
+    </div>
+    <div id="out" class="out"></div>
+  </section>
+
+  <!-- История -->
+  <section class="scr" id="scr-history">
+    <div class="card"><h3>История занятий</h3><div id="histList"></div></div>
+    <div class="card"><h3>Резервная копия</h3>
+      <div class="btns"><button id="btnExport">⬇ Сохранить всё (JSON)</button><label class="filebtn">⬆ Загрузить<input type="file" id="fImport" accept="application/json,.json"></label></div>
+    </div>
+  </section>
+
+  <!-- План года -->
+  <section class="scr" id="scr-plan">
+    <div class="card"><h3>Программа и усложнение по месяцам</h3>
+      <div class="seg" id="planAge"><button data-v="mid" class="on">Средняя</button><button data-v="old">Старшая</button><button data-v="prep">Подготов.</button></div>
+      <div id="planOut"></div>
+    </div>
+  </section>
+
+  <!-- Настройки -->
+  <section class="scr" id="scr-settings">
+    <div class="card"><h3>Для титульного листа</h3>
+      <label>Учреждение<input id="sOrg" placeholder="МБДОУ «Детский сад № 1»"></label>
+      <label>Город<input id="sCity"></label>
+      <label>ФИО составителя<input id="sAuthor"></label>
+      <label>Должность<input id="sPosition" placeholder="учитель-логопед"></label>
+      <label>Шрифт Word<select id="sFont"><option value="14">14 пт</option><option value="12">12 пт</option></select></label>
+      <label class="tgl"><input type="checkbox" id="sCaps" checked> Подписывать картинки в рабочем листе</label>
+    </div>
+
+    <div class="card"><h3>🤖 Текстовая нейросеть (по API-ключу)</h3>
+      <label>Сервис<select id="sProv"></select></label>
+      <label>Адрес API (base URL)<input id="sBase" inputmode="url" autocapitalize="off" spellcheck="false"></label>
+      <label>Модель<input id="sModel" autocapitalize="off" spellcheck="false"></label>
+      <label>API-ключ<input id="sKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-..."></label>
+      <label class="slider">Креативность: <b id="tempVal">0.7</b><input type="range" id="sTemp" min="0" max="1.5" step="0.1" value="0.7"></label>
+      <div class="btns"><button id="btnTest">Проверить подключение</button><button id="btnKeyLink">Где взять ключ?</button></div>
+      <p class="note" id="testRes"></p>
+    </div>
+
+    <div class="card"><h3>🖼️ Картинки (отдельная нейросеть)</h3>
+      <label>Источник картинок<select id="sImg">
+        <option value="emoji">Эмодзи — без интернета</option>
+        <option value="arasaac">Пиктограммы ARASAAC — бесплатно</option>
+        <option value="pollinations">Pollinations.ai — нейросеть по ссылке, бесплатно</option>
+        <option value="gemini">Google Gemini (Nano Banana) — по API-ключу</option>
+        <option value="openai">Нейросеть по API-ключу (OpenAI-совместимая)</option>
+      </select></label>
+      <div id="imgPoll">
+        <label>Ссылка подключения (шаблон: {prompt}, {seed})<input id="sPollUrl" inputmode="url" autocapitalize="off" spellcheck="false"></label>
+        <label>Токен Pollinations (необязательно)<input id="sPollKey" type="password" autocapitalize="off" spellcheck="false"></label>
+      </div>
+      <div id="imgGem">
+        <p class="note">Подписка Gemini Pro (Google AI Pro) не даёт ключ напрямую. Ключ создаётся бесплатно в Google AI Studio. Картинки через API платные (≈3–7 ₽ за штуку); к подписке прилагается 10 $ кредитов Google Cloud в месяц — их нужно активировать в Google Developer Program. Из России API работает только через VPN на телефоне. Без API: кнопка «🎨 Gemini» в занятии даст промпт для приложения Gemini, а готовые картинки можно вставить в лист.</p>
+        <label>API-ключ Gemini (AIza…)<input id="sGemKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Если пусто — берётся ключ текстовой нейросети Gemini"></label>
+        <label>Модель<input id="sGemModel" list="gemModels" autocapitalize="off" spellcheck="false"><datalist id="gemModels"><option value="gemini-2.5-flash-image"><option value="gemini-3.1-flash-image-preview"><option value="gemini-3-pro-image-preview"></datalist></label>
+        <div class="btns"><button id="btnGemKey">Получить ключ</button><button id="btnGemCredits">Кредиты подписки</button></div>
+      </div>
+      <div id="imgApi">
+        <label>Адрес API картинок (base URL)<input id="sImgBase" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://api.openai.com/v1"></label>
+        <label>Модель<input id="sImgModel" autocapitalize="off" spellcheck="false" placeholder="dall-e-3"></label>
+        <label>API-ключ картинок<input id="sImgKey" type="password" autocapitalize="off" spellcheck="false"></label>
+        <label>Размер<select id="sImgSize"><option>1024x1024</option><option>512x512</option><option>256x256</option></select></label>
+      </div>
+      <label>Стиль<select id="sImgStyle"><option value="color">Цветные картинки</option><option value="coloring">Раскраски (контур)</option></select></label>
+      <label class="tgl"><input type="checkbox" id="sTranslate" checked> Переводить слова на английский через текстовую нейросеть (точнее картинки)</label>
+      <div class="btns"><button id="btnImgTest">Проверить картинку</button><button id="btnImgClear">Очистить кэш картинок</button><button id="btnOwnClear">Удалить свои картинки</button></div>
+      <div id="imgTestOut" class="imgtest"></div>
+    </div>
+
+    <div class="card"><h3>Промпт</h3>
+      <p class="note">Полный системный промпт, по которому работает ИИ.</p>
+      <div class="btns"><button id="btnShowPrompt">Показать промпт</button></div>
+    </div>
+    <p class="note center" id="ver"></p>
+  </section>
+
+  <!-- Промпт -->
+  <section class="scr" id="scr-prompt">
+    <div class="card"><h3>Системный промпт</h3>
+      <div class="btns"><button id="btnCopyPrompt">📋 Копировать</button><button id="btnSharePrompt">📤 Отправить</button></div>
+      <pre id="promptText" class="prompt"></pre>
+      <h3>Запрос по текущему занятию</h3>
+      <pre id="userPromptText" class="prompt"></pre>
+      <h3>Промпт для картинок в приложении Gemini</h3>
+      <p class="note">Скопируйте в приложение Gemini (подписка Pro), сохраните картинки в галерею, затем в «Занятии» включите «Заменять картинки» и нажмите на нужную картинку.</p>
+      <div class="btns"><button id="btnCopyGem">📋 Копировать</button><button id="btnShareGem">📤 Отправить</button></div>
+      <pre id="gemPromptText" class="prompt"></pre>
+    </div>
+  </section>
+</main>
+
+<nav class="bottom" id="nav">
+  <button data-scr="build" class="on"><span>🧩</span>Конструктор</button>
+  <button data-scr="result"><span>📄</span>Занятие</button>
+  <button data-scr="history"><span>🗂️</span>История</button>
+  <button data-scr="plan"><span>📈</span>План года</button>
+  <button data-scr="settings"><span>⚙️</span>Настройки</button>
+</nav>
+
+<div id="busy" class="busy hidden"><div class="spin"></div><p id="busyText">Генерация…</p><button id="btnCancel">Отмена</button></div>
+<div id="toast" class="toast"></div>
+
+<script src="data.js"></script>
+<script src="gen.js"></script>
+<script src="prompt.js"></script>
+<script src="docx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
