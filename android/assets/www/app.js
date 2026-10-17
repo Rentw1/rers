@@ -51,6 +51,7 @@ const PROVIDERS = {
   deepseek: { name: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'https://platform.deepseek.com/api_keys' },
   openrouter: { name: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: 'deepseek/deepseek-chat', key: 'https://openrouter.ai/keys' },
   openai: { name: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', key: 'https://platform.openai.com/api-keys' },
+  gemini: { name: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', key: 'https://aistudio.google.com/apikey' },
   groq: { name: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', key: 'https://console.groq.com/keys' },
   mistral: { name: 'Mistral', base: 'https://api.mistral.ai/v1', model: 'mistral-large-latest', key: 'https://console.mistral.ai/api-keys' },
   custom: { name: 'Свой сервис (OpenAI-совместимый)', base: '', model: '', key: '' }
@@ -59,7 +60,7 @@ const POLL_DEFAULT = 'https://image.pollinations.ai/prompt/{prompt}?width=512&he
 const DEF_SETTINGS = {
   org: '', city: '', author: '', position: '', font: '14', caps: true,
   prov: 'deepseek', base: PROVIDERS.deepseek.base, model: PROVIDERS.deepseek.model, key: '', temp: 0.7,
-  img: 'emoji', pollUrl: POLL_DEFAULT, pollKey: '', imgBase: 'https://api.openai.com/v1', imgModel: 'dall-e-3', imgKey: '', imgSize: '1024x1024', imgStyle: 'color', translate: true
+  img: 'emoji', pollUrl: POLL_DEFAULT, pollKey: '', imgBase: 'https://api.openai.com/v1', imgModel: 'dall-e-3', imgKey: '', imgSize: '1024x1024', imgStyle: 'color', translate: true, gemKey: '', gemModel: 'gemini-2.5-flash-image'
 };
 let S = Object.assign({}, DEF_SETTINGS, store.get('settings', {}));
 
@@ -378,7 +379,18 @@ function idbOpen() {
 }
 async function idbGet(k) { const db = await idbOpen(); if (!db) return null; return new Promise(res => { try { const r = db.transaction('img').objectStore('img').get(k); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); } catch (e) { res(null); } }); }
 async function idbSet(k, v) { const db = await idbOpen(); if (!db) return; try { db.transaction('img', 'readwrite').objectStore('img').put(v, k); } catch (e) { /* квота */ } }
-async function idbClear() { const db = await idbOpen(); if (!db) return; try { db.transaction('img', 'readwrite').objectStore('img').clear(); } catch (e) { /* нет базы */ } }
+async function idbDel(k) { const db = await idbOpen(); if (!db) return; try { db.transaction('img', 'readwrite').objectStore('img').delete(k); } catch (e) { /* нет базы */ } }
+async function idbClearCache() {
+  const db = await idbOpen(); if (!db) return;
+  await new Promise(res => {
+    try {
+      const rq = db.transaction('img', 'readwrite').objectStore('img').openCursor();
+      rq.onsuccess = () => { const c = rq.result; if (!c) return res(); if (!String(c.key).startsWith('own|')) c.delete(); c.continue(); };
+      rq.onerror = () => res();
+    } catch (e) { res(); }
+  });
+}
+const ownPics = () => new Set(store.get('ownPics', []));
 
 function hashStr(s) { let h = 2166136261; for (const ch of s) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 async function translateWords(words) {
@@ -395,12 +407,40 @@ async function translateWords(words) {
   return w => tr[w] || w;
 }
 function imgPrompt(word) { return (S.imgStyle === 'coloring' ? IMAGE_PROMPT_COLORING : IMAGE_PROMPT_DEFAULT).replace('{word}', word); }
+function geminiPrompt(word) {
+  const p = state.params;
+  return GEMINI_IMAGE_PROMPT.replace('{word}', word).replace('{theme}', themeOf(p).name).replace('{age}', AGES[p.age].years)
+    .replace('{style}', S.imgStyle === 'coloring' ? GEMINI_STYLE_COLORING : GEMINI_STYLE_COLOR);
+}
+function geminiErr(r) {
+  const m = parseErr(r);
+  if (/location is not supported|FAILED_PRECONDITION/i.test(m)) return 'Gemini API недоступен из вашего региона — включите VPN на телефоне (страна из списка Google) и повторите';
+  if (/billing|free_tier|limit: 0|quota/i.test(m)) return 'Для картинок Gemini нужен платёжный аккаунт или кредиты Google Cloud (см. Настройки → Gemini). ' + m.slice(0, 120);
+  return m;
+}
 
 async function resolveImage(word, tr) {
-  const key = `${S.img}|${S.imgStyle}|${S.img === 'openai' ? S.imgModel : ''}|${word}`;
+  const key = `${S.img}|${S.imgStyle}|${S.img === 'openai' ? S.imgModel : S.img === 'gemini' ? S.gemModel : ''}|${word}`;
+  if (ownPics().has(word)) { const own = await idbGet('own|' + word); if (own) return own; }
   if (imgMem[key] !== undefined) return imgMem[key];
   let url = null;
-  if (S.img === 'arasaac') {
+  if (S.img === 'gemini') {
+    const cached = await idbGet(key);
+    const gk = S.gemKey || (S.prov === 'gemini' ? S.key : '');
+    if (cached) url = cached;
+    else if (gk) {
+      const body = { contents: [{ parts: [{ text: geminiPrompt(word) }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '1:1' } } };
+      const r = await http('POST', `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(S.gemModel || 'gemini-2.5-flash-image')}:generateContent`, { 'Content-Type': 'application/json', 'x-goog-api-key': gk }, JSON.stringify(body), 180000);
+      if (r.ok) {
+        try {
+          const parts = JSON.parse(r.body).candidates[0].content.parts;
+          const im = parts.map(x => x.inlineData || x.inline_data).find(Boolean);
+          if (im && im.data) url = `data:${im.mimeType || im.mime_type || 'image/png'};base64,${im.data}`;
+        } catch (e) { url = null; }
+        if (url) await idbSet(key, url);
+      } else if (!resolveImage._warned) { resolveImage._warned = 1; toast('Gemini: ' + geminiErr(r), 7000); }
+    }
+  } else if (S.img === 'arasaac') {
     const ids = store.get('arasaac', {});
     if (ids[word] === undefined) {
       const r = await http('GET', 'https://api.arasaac.org/v1/pictograms/ru/search/' + encodeURIComponent(word), {}, '', 20000);
@@ -435,10 +475,10 @@ async function resolveImage(word, tr) {
 }
 let hydrateRun = 0;
 async function hydratePics(root) {
-  if (S.img === 'emoji') return;
   const run = ++hydrateRun;
   const els = Array.from(root.querySelectorAll('.pic[data-q]'));
-  const words = [...new Set(els.map(e => e.dataset.q))];
+  const own = ownPics();
+  const words = [...new Set(els.map(e => e.dataset.q))].filter(w => S.img !== 'emoji' || own.has(w));
   if (!words.length) return;
   const tr = (S.img === 'pollinations' || S.img === 'openai') ? await translateWords(words) : (w => w);
   const queue = words.slice();
@@ -446,7 +486,9 @@ async function hydratePics(root) {
     if (!url || run !== hydrateRun) return;
     root.querySelectorAll(`.pic[data-q="${CSS.escape(w)}"]`).forEach(e => {
       const emo = e.querySelector('.emo');
-      if (!emo || e.querySelector('img')) return;
+      const old = e.querySelector('img');
+      if (old) { old.src = url; return; }
+      if (!emo) return;
       const img = new Image();
       img.alt = w;
       img.loading = 'lazy';
@@ -454,13 +496,72 @@ async function hydratePics(root) {
       img.src = url;
     });
   };
-  const workers = Array.from({ length: S.img === 'openai' ? 2 : 4 }, async () => {
+  const workers = Array.from({ length: S.img === 'openai' || S.img === 'gemini' ? 2 : 4 }, async () => {
     while (queue.length && run === hydrateRun) {
       const w = queue.shift();
       try { apply(w, await resolveImage(w, tr)); } catch (e) { /* эмодзи остаётся */ }
     }
   });
   await Promise.all(workers);
+}
+
+/* ===== Свои картинки (например, из приложения Gemini) ===== */
+let replaceWord = null;
+function onPicTap(e) {
+  if (!$('#tReplace').checked) return;
+  const p = e.target.closest('.pic[data-q]');
+  if (!p) return;
+  e.preventDefault();
+  replaceWord = p.dataset.q;
+  $('#fOwnPic').click();
+}
+function resizeImage(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = () => rej(new Error('Не удалось прочитать файл'));
+    fr.onload = () => {
+      const im = new Image();
+      im.onerror = () => rej(new Error('Это не картинка'));
+      im.onload = () => {
+        const k = Math.min(1, 360 / Math.max(im.width, im.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(im.width * k)); cv.height = Math.max(1, Math.round(im.height * k));
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(im, 0, 0, cv.width, cv.height);
+        res(cv.toDataURL('image/jpeg', 0.88));
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+async function onOwnPic(file) {
+  if (!file || !replaceWord) return;
+  if (file.size > 25 * 1024 * 1024) { toast('Файл слишком большой'); return; }
+  try {
+    const data = await resizeImage(file);
+    await idbSet('own|' + replaceWord, data);
+    const set = ownPics(); set.add(replaceWord); store.set('ownPics', [...set]);
+    toast(`Картинка для «${replaceWord}» сохранена`);
+    renderResult();
+  } catch (e) { toast(e.message, 4000); }
+}
+async function clearOwnPics() {
+  const set = ownPics();
+  for (const w of set) await idbDel('own|' + w);
+  store.set('ownPics', []);
+  toast('Свои картинки удалены: ' + set.size);
+  renderResult();
+}
+function geminiManualPrompt() {
+  if (!state.tasks.length) return 'Соберите занятие, чтобы получить список картинок.';
+  const d = document.createElement('div');
+  d.innerHTML = docHtml('sheet');
+  const words = [...new Set(Array.from(d.querySelectorAll('.pic[data-q]')).map(e => e.dataset.q))];
+  const p = state.params;
+  return GEMINI_MANUAL_PROMPT.replace('{theme}', themeOf(p).name).replace('{age}', AGES[p.age].years)
+    .replace('{style}', S.imgStyle === 'coloring' ? GEMINI_STYLE_COLORING : GEMINI_STYLE_COLOR)
+    .replace('{count}', words.length).replace('{words}', words.map((w, i) => `${i + 1}. ${w}`).join('\n'))
+    .replace('{grid}', words.slice(0, 9).join(', '));
 }
 
 /* ===== Экспорт: Word (MHT с картинками), PDF (печать), отправка ===== */
@@ -588,6 +689,7 @@ function renderPlan(age) {
 function renderPrompt() {
   $('#promptText').textContent = SYSTEM_PROMPT;
   $('#userPromptText').textContent = state.tasks.length ? userPrompt(state.tab || 'konspekt') : 'Соберите занятие, чтобы увидеть запрос.';
+  $('#gemPromptText').textContent = geminiManualPrompt();
 }
 function copyText(t) {
   const fallback = () => { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Скопировано'); } catch (e) { toast('Не удалось скопировать'); } ta.remove(); };
@@ -597,7 +699,7 @@ function copyText(t) {
 /* ===== Настройки ===== */
 function initSettings() {
   fillSelect($('#sProv'), Object.entries(PROVIDERS).map(([k, v]) => [k, v.name]), S.prov);
-  const map = { sOrg: 'org', sCity: 'city', sAuthor: 'author', sPosition: 'position', sFont: 'font', sBase: 'base', sModel: 'model', sKey: 'key', sTemp: 'temp', sImg: 'img', sPollUrl: 'pollUrl', sPollKey: 'pollKey', sImgBase: 'imgBase', sImgModel: 'imgModel', sImgKey: 'imgKey', sImgSize: 'imgSize', sImgStyle: 'imgStyle' };
+  const map = { sGemKey: 'gemKey', sGemModel: 'gemModel', sOrg: 'org', sCity: 'city', sAuthor: 'author', sPosition: 'position', sFont: 'font', sBase: 'base', sModel: 'model', sKey: 'key', sTemp: 'temp', sImg: 'img', sPollUrl: 'pollUrl', sPollKey: 'pollKey', sImgBase: 'imgBase', sImgModel: 'imgModel', sImgKey: 'imgKey', sImgSize: 'imgSize', sImgStyle: 'imgStyle' };
   Object.entries(map).forEach(([id, k]) => {
     const el = $('#' + id);
     el.value = S[k];
@@ -617,6 +719,7 @@ function saveSettings(silent) {
   $('#tempVal').textContent = (+S.temp).toFixed(1);
   $('#imgPoll').classList.toggle('hidden', S.img !== 'pollinations');
   $('#imgApi').classList.toggle('hidden', S.img !== 'openai');
+  $('#imgGem').classList.toggle('hidden', S.img !== 'gemini');
   store.set('settings', S);
   updateBadge();
   if (!silent) Object.keys(imgMem).forEach(k => delete imgMem[k]);
@@ -635,6 +738,8 @@ async function testImg() {
   busy(true, 'Получаю картинку…');
   try {
     Object.keys(imgMem).forEach(k => delete imgMem[k]);
+    if (S.img === 'gemini' && !(S.gemKey || (S.prov === 'gemini' && S.key))) { busy(false); $('#imgTestOut').innerHTML = '<p class="note">❌ Вставьте API-ключ Gemini.</p>'; return; }
+    resolveImage._warned = 0;
     const tr = (S.img === 'pollinations' || S.img === 'openai') ? await translateWords(['яблоко']) : (w => w);
     const url = await resolveImage('яблоко', tr);
     busy(false);
@@ -664,7 +769,15 @@ function bind() {
   $('#btnTest').onclick = testAi;
   $('#btnKeyLink').onclick = () => { const u = (PROVIDERS[S.prov] || {}).key || 'https://platform.deepseek.com/api_keys'; if (NATIVE) window.Android.openUrl(u); else window.open(u, '_blank'); };
   $('#btnImgTest').onclick = testImg;
-  $('#btnImgClear').onclick = async () => { await idbClear(); store.set('arasaac', {}); store.set('tr', {}); Object.keys(imgMem).forEach(k => delete imgMem[k]); toast('Кэш картинок очищен'); };
+  $('#btnImgClear').onclick = async () => { await idbClearCache(); store.set('arasaac', {}); store.set('tr', {}); Object.keys(imgMem).forEach(k => delete imgMem[k]); toast('Кэш картинок очищен (свои картинки сохранены)'); };
+  $('#btnOwnClear').onclick = clearOwnPics;
+  $('#btnGemKey').onclick = () => { const u = 'https://aistudio.google.com/apikey'; if (NATIVE) window.Android.openUrl(u); else window.open(u, '_blank'); };
+  $('#btnGemCredits').onclick = () => { const u = 'https://developers.google.com/program/my-benefits'; if (NATIVE) window.Android.openUrl(u); else window.open(u, '_blank'); };
+  $('#out').addEventListener('click', onPicTap, true);
+  $('#fOwnPic').onchange = e => { onOwnPic(e.target.files[0]); e.target.value = ''; };
+  $('#btnGemPrompt').onclick = () => { show('prompt'); setTimeout(() => $('#gemPromptText').scrollIntoView({ block: 'start' }), 50); };
+  $('#btnCopyGem').onclick = () => copyText(geminiManualPrompt());
+  $('#btnShareGem').onclick = () => { if (NATIVE) window.Android.shareText(geminiManualPrompt(), 'Промпт для Gemini'); else copyText(geminiManualPrompt()); };
   $('#btnShowPrompt').onclick = () => show('prompt');
   $('#btnCopyPrompt').onclick = () => copyText(SYSTEM_PROMPT);
   $('#btnSharePrompt').onclick = () => { if (NATIVE) window.Android.shareText(SYSTEM_PROMPT, 'Промпт: Конструктор занятий ДОУ'); else copyText(SYSTEM_PROMPT); };
