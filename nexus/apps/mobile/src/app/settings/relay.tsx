@@ -53,12 +53,12 @@ export default function RelayScreen() {
           Подключите компьютер
         </T>
         <T v="small" style={{ marginBottom: 18 }}>
-          Nexus Relay — небольшая программа для Windows, macOS и Linux. Она даёт ИИ доступ к файлам в выбранных папках, буферу обмена ПК и запускает локальные MCP-серверы (как в Claude Desktop), а также синхронизирует чаты.
+          Установите Nexus для ПК (Windows, macOS, Linux) — он даёт ИИ доступ к файлам в выбранных папках, буферу обмена и локальным MCP-серверам (как в Claude Desktop), а также синхронизирует чаты. Без установки можно запустить консольный Nexus Relay.
         </T>
         <Section title="Как подключить">
-          <Row first icon="download-outline" title="1. Установите Node.js 20+ на ПК" subtitle="nodejs.org" onPress={() => void WebBrowser.openBrowserAsync('https://nodejs.org/en/download')} chevron />
-          <Row icon="terminal-outline" title="2. Скачайте и запустите Relay" subtitle="Файл nexus-relay.mjs из релизов → node nexus-relay.mjs" onPress={() => void WebBrowser.openBrowserAsync(RELEASES)} chevron />
-          <Row icon="qr-code-outline" title="3. Отсканируйте QR-код" subtitle="QR показывается в терминале и на странице http://localhost:4545" />
+          <Row first icon="download-outline" title="1. Установите Nexus для ПК" subtitle="Nexus-Setup.exe / .AppImage / .dmg из релизов" onPress={() => void WebBrowser.openBrowserAsync(RELEASES)} chevron />
+          <Row icon="settings-outline" title="2. На ПК: Телефон → «Разрешить подключение»" subtitle="Или консольный вариант: node nexus-relay.mjs (нужен Node.js 20+)" />
+          <Row icon="qr-code-outline" title="3. Отсканируйте QR-код" subtitle="QR показан в разделе «Телефон» на ПК (или на http://localhost:4545 для Relay)" />
         </Section>
         <Button icon="qr-code-outline" title="Сканировать QR" onPress={() => router.push('/scan?mode=relay')} />
         <T v="caption" style={{ marginTop: 14 }}>

@@ -5,3 +5,4 @@ dist-bundle/
 .env*
 coverage/
 !apps/mobile/signing/nexus-shared.keystore
+release/

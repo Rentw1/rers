@@ -99,6 +99,30 @@ export class ServerManager {
     s.tools = tools;
   }
 
+  /** Starts (or restarts with a new definition) one server at runtime. */
+  async upsert(id: string, entry: ServerEntry): Promise<void> {
+    await this.remove(id);
+    this.stopping = false;
+    if (!entry.disabled) await this.startOne(id, entry);
+  }
+
+  async remove(id: string): Promise<void> {
+    const s = this.servers.get(id);
+    if (!s) return;
+    this.servers.delete(id);
+    const client = s.client;
+    s.client = undefined;
+    try {
+      await client?.close();
+    } catch {
+      // ignore
+    }
+  }
+
+  serverTools(id: string): ManagedTool[] {
+    return this.servers.get(id)?.tools ?? [];
+  }
+
   status(): { id: string; status: ManagedServer['status']; tools: number; error?: string }[] {
     return [...this.servers.values()].map((s) => ({ id: s.id, status: s.status, tools: s.tools.length, error: s.error }));
   }

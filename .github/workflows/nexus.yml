@@ -17,6 +17,10 @@ defaults:
   run:
     working-directory: nexus
 
+env:
+  # Only the desktop job needs the Electron binary.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
 jobs:
   check:
     name: Typecheck, lint, test, bundle
@@ -111,11 +115,64 @@ jobs:
             nexus/apps/mobile/dist/SHA256SUMS.txt
           if-no-files-found: error
 
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    needs: check
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: Windows, target: --win }
+          - { os: ubuntu-latest, name: Linux, target: --linux }
+          - { os: macos-latest, name: macOS, target: --mac }
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ''
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: nexus
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: nexus/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: nexus/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Version
+        id: version
+        run: |
+          BASE=$(node -p "require('./apps/mobile/package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/nexus-v* ]]; then NAME="${GITHUB_REF#refs/tags/nexus-v}"; else NAME="${BASE%.*}.$GITHUB_RUN_NUMBER"; fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+      - name: Build installers
+        working-directory: nexus/apps/desktop
+        run: |
+          pnpm build
+          npx electron-builder ${{ matrix.target }} --publish never -c.extraMetadata.version=${{ steps.version.outputs.name }}
+          ls -la release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexus-desktop-${{ matrix.name }}
+          path: |
+            nexus/apps/desktop/release/*.exe
+            nexus/apps/desktop/release/*.AppImage
+            nexus/apps/desktop/release/*.deb
+            nexus/apps/desktop/release/*.dmg
+          if-no-files-found: error
+
   release:
     name: GitHub Release
     # Every push publishes a release (tag nexus-v<version>) so the APK has a direct download link and the app can self-update.
     if: github.event_name == 'push'
-    needs: [check, apk]
+    needs: [check, apk, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -130,7 +187,7 @@ jobs:
       - name: Checksums
         run: |
           cd artifacts
-          sha256sum nexus-relay.mjs >> SHA256SUMS.txt
+          sha256sum nexus-relay.mjs Nexus-* >> SHA256SUMS.txt
           ls -la
       - uses: softprops/action-gh-release@v2
         with:
@@ -141,6 +198,7 @@ jobs:
           files: |
             artifacts/*.apk
             artifacts/nexus-relay.mjs
+            artifacts/Nexus-*
             artifacts/SHA256SUMS.txt
           body: |
             ## Установка на телефон
@@ -148,7 +206,12 @@ jobs:
             2. Откройте файл и разрешите установку из этого источника.
             3. Вставьте API-ключ DeepSeek (или другого провайдера).
 
-            ## Компьютер (необязательно)
-            Скачайте `nexus-relay.mjs`, установите Node.js 20+ и запустите `node nexus-relay.mjs`, затем отсканируйте QR в приложении: Настройки → Компьютер.
+            ## Компьютер — Nexus Desktop
+            - **Windows:** `Nexus-Setup-*.exe` (установщик) или `Nexus-Portable-*.exe` (без установки). При предупреждении SmartScreen: «Подробнее» → «Выполнить в любом случае».
+            - **Linux:** `Nexus-*-linux-x86_64.AppImage` (`chmod +x` и запуск) или `.deb`.
+            - **macOS:** `Nexus-*-mac.dmg` (первый запуск: правый клик → «Открыть»).
+
+            Чтобы связать с телефоном: на ПК «Телефон» → «Разрешить подключение», в приложении: Настройки → Компьютер → «Сканировать QR».
+            Консольная альтернатива без установки: `node nexus-relay.mjs` (Node.js 20+).
 
             Контрольные суммы — в `SHA256SUMS.txt`.

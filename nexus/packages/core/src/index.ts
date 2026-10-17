@@ -10,3 +10,4 @@ export * from './protocol';
 export * from './mcp/client';
 export * from './mcp/oauth';
 export * from './context';
+export * from './tree';

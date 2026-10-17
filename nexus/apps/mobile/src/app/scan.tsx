@@ -39,7 +39,7 @@ export default function Scan() {
                 setBusy(true);
                 try {
                   const done = await handleIncomingLink(data, mode);
-                  if (!done) throw new Error(mode === 'relay' ? 'Это не QR-код Nexus Relay' : 'QR-код не распознан как ссылка Nexus или адрес MCP-сервера');
+                  if (!done) throw new Error(mode === 'relay' ? 'Это не QR-код подключения к ПК Nexus' : 'QR-код не распознан как ссылка Nexus или адрес MCP-сервера');
                 } catch (e) {
                   Alert.alert('Не получилось', (e as Error).message, [{ text: 'Ещё раз', onPress: () => ((handled.current = false), setBusy(false)) }, { text: 'Закрыть', onPress: () => router.back() }]);
                 }
@@ -48,7 +48,7 @@ export default function Scan() {
       />
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 48, alignItems: 'center' }}>
         <View style={{ backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}>
-          <T color="#fff">{busy ? 'Подключение…' : mode === 'relay' ? 'Наведите на QR-код в окне Nexus Relay' : 'Наведите на QR-код'}</T>
+          <T color="#fff">{busy ? 'Подключение…' : mode === 'relay' ? 'Наведите на QR-код в разделе «Телефон» Nexus для ПК' : 'Наведите на QR-код'}</T>
         </View>
       </View>
     </View>

@@ -1,0 +1,137 @@
+{
+  "name": "@nexus/desktop",
+  "productName": "Nexus",
+  "version": "1.1.0",
+  "description": "Nexus — ИИ-ассистент для ПК: любые модели, MCP, связь с телефоном, учёт расходов",
+  "author": "Nexus",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "pnpm build && electron .",
+    "build:main": "esbuild src/main/main.ts --bundle --platform=node --format=cjs --target=node22 --external:electron --outfile=dist/main.js && esbuild src/main/preload.ts --bundle --platform=node --format=cjs --target=node22 --external:electron --outfile=dist/preload.js && node -e \"require('fs').copyFileSync('build/icon.png','dist/icon.png')\"",
+    "build:renderer": "vite build",
+    "build": "pnpm build:main && pnpm build:renderer",
+    "start": "electron .",
+    "dist": "pnpm build && electron-builder --publish never",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@nexus/core": "workspace:*",
+    "@nexus/relay": "workspace:*",
+    "@types/node": "^22.20.5",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "44.9.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "highlight.js": "^11.12.0",
+    "qrcode": "^1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
+  },
+  "homepage": "https://github.com/Rentw1/rers",
+  "build": {
+    "appId": "app.nexus.desktop",
+    "productName": "Nexus",
+    "copyright": "Nexus",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "artifactName": "Nexus-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "executableName": "Nexus"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Nexus",
+      "artifactName": "Nexus-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "Nexus-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "maintainer": "Nexus <nexus@users.noreply.github.com>",
+      "synopsis": "ИИ-ассистент: любые модели, MCP, расходы",
+      "executableName": "nexus",
+      "syncDesktopName": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "identity": null
+    },
+    "dmg": {
+      "artifactName": "Nexus-${version}-mac.${ext}"
+    },
+    "extraMetadata": {
+      "name": "nexus-desktop",
+      "desktopName": "nexus.desktop"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rentw1/rers.git"
+  }
+}
