@@ -15,6 +15,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Linking, Platform, Share } from 'react-native';
 import type { ToolOutput } from '@nexus/core';
 import { checkUrlSecurity } from '@nexus/core';
+import { parseDdgHtml, parseDdgLite, type SearchResult } from './ddg';
 import { fetchWithTimeout } from './net';
 
 export interface PhoneTool {
@@ -297,6 +298,20 @@ export const PHONE_TOOLS: PhoneTool[] = [
     },
   },
   {
+    name: 'web_search',
+    title: 'Поиск в интернете',
+    description: 'Поиск в интернете (DuckDuckGo). Возвращает заголовки, ссылки и фрагменты. Для подробностей открой нужную ссылку через web_fetch.',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' }, max_results: { type: 'integer' }, region: { type: 'string', description: 'Например ru-ru, us-en' } }, required: ['query'] },
+    readOnly: true,
+    run: async (a) => {
+      const query = str(a.query, 'query');
+      const max = Math.min(Math.max(Number(a.max_results) || 8, 1), 20);
+      const results = await searchWeb(query, max, typeof a.region === 'string' ? a.region : undefined);
+      if (!results.length) return { content: `Ничего не найдено по запросу «${query}»` };
+      return ok(results.map((r, i) => `${i + 1}. ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n'));
+    },
+  },
+  {
     name: 'camera_take_photo',
     title: 'Сделать фото',
     description: 'Открыть камеру, пользователь делает снимок; изображение возвращается модели.',
@@ -339,6 +354,26 @@ export const PHONE_TOOLS: PhoneTool[] = [
     },
   },
 ];
+
+export async function searchWeb(query: string, max: number, region?: string): Promise<SearchResult[]> {
+  const headers = { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36', 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/html' };
+  const body = `q=${encodeURIComponent(query)}${region ? `&kl=${encodeURIComponent(region)}` : ''}`;
+  try {
+    const res = await fetchWithTimeout('https://html.duckduckgo.com/html/', { method: 'POST', headers, body }, 15_000);
+    if (res.ok) {
+      const r = parseDdgHtml(await res.text(), max);
+      if (r.length) return r;
+    }
+  } catch {
+    // fall through to the lite endpoint
+  }
+  const res = await fetchWithTimeout(`https://lite.duckduckgo.com/lite/?${body}`, { headers: { 'User-Agent': headers['User-Agent'] } }, 15_000);
+  if (!res.ok) throw new Error(`Поиск недоступен: HTTP ${res.status}`);
+  return parseDdgLite(await res.text(), max);
+}
+
+/** Read-only tools that run without asking unless the user changes it. */
+export const SAFE_BY_DEFAULT = new Set(['datetime_now', 'device_info', 'web_search', 'web_fetch']);
 
 export function phoneTool(name: string): PhoneTool | undefined {
   return PHONE_TOOLS.find((t) => t.name === name);

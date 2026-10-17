@@ -1,14 +1,17 @@
 import * as Clipboard from 'expo-clipboard';
+import * as Notifications from 'expo-notifications';
 import { router, useNavigation } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, Share, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { messageText, type ToolResultBlock } from '@nexus/core';
 import { blockingBudgets } from '@/lib/budget';
 import { createChatFor, editAndResend, isToolResultMessage, pathTo, regenerate, retry, sendMessage, siblingsOf, stop, switchBranch, type Attachment } from '@/lib/engine';
+import { chatToMarkdown, shareChatMarkdown } from '@/lib/exportChat';
 import { money, tokens } from '@/lib/format';
 import { resolveModel } from '@/lib/providers';
 import * as repo from '@/lib/repo';
+import { toggleSpeak } from '@/lib/speech';
 import { useTheme } from '@/lib/theme';
 import { runtime, useChatRuntime } from '@/store/chat';
 import { settings, useSettings } from '@/store/settings';
@@ -64,6 +67,9 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
   const [picker, setPicker] = useState(false);
   const [menu, setMenu] = useState<{ item: Item; text: string } | null>(null);
   const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
+  const [selectText, setSelectText] = useState<string | null>(null);
+  const [chatMenu, setChatMenu] = useState(false);
+  const [speakingKey, setSpeakingKey] = useState<string | null>(null);
   const [project, setProject] = useState<repo.Project | null>(null);
   const showReasoning = useSettings((s) => s.showReasoning);
   const showCost = useSettings((s) => s.showCost);
@@ -134,6 +140,10 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
   const onSend = async (text: string, atts: Attachment[]): Promise<boolean> => {
     try {
       if (!(await confirmBudget(current.providerId))) return false;
+      if (!settings().notifAsked) {
+        void settings().set('notifAsked', true);
+        void Notifications.requestPermissionsAsync().catch(() => undefined);
+      }
       let id = chatId;
       if (!id) {
         const created = await createChatFor(project?.id ?? null);
@@ -184,7 +194,14 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
         {item.msgs.map((m) => (
           <View key={m.id}>
             <AssistantBlocks blocks={m.blocks} results={item.results} showReasoning={showReasoning} />
-            {m.stopReason === 'max_tokens' ? <T v="caption" color={c.warning}>Ответ обрезан лимитом токенов.</T> : null}
+            {m.stopReason === 'max_tokens' ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <T v="caption" color={c.warning}>
+                  Ответ обрезан лимитом токенов.
+                </T>
+                {item.last && !running && m.id === item.msgs[item.msgs.length - 1]?.id ? <Button small kind="ghost" icon="play-forward-outline" title="Продолжить" onPress={() => chatId && void sendMessage(chatId, 'Продолжи ровно с того места, где ты остановился, без повторов.')} /> : null}
+              </View>
+            ) : null}
           </View>
         ))}
         {!hideFooter ? (
@@ -192,6 +209,7 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
             <IconButton name="copy-outline" label="Копировать" size={17} color={c.textMuted} onPress={() => void Clipboard.setStringAsync(turnText(item))} />
             {item.userId ? <IconButton name="refresh" label="Перегенерировать" size={17} color={c.textMuted} disabled={running} onPress={() => chatId && item.userId && void regenerate(chatId, item.userId)} /> : null}
             <IconButton name="share-outline" label="Поделиться" size={17} color={c.textMuted} onPress={() => void Share.share({ message: turnText(item) })} />
+            <IconButton name={speakingKey === item.key ? 'stop-circle-outline' : 'volume-high-outline'} label={speakingKey === item.key ? 'Остановить озвучку' : 'Озвучить'} size={17} color={speakingKey === item.key ? c.accent : c.textMuted} onPress={() => toggleSpeak(item.key, turnText(item), setSpeakingKey)} />
             {item.siblings.length > 1 ? <BranchNav idx={idx} total={item.siblings.length} onPick={(i) => chatId && void switchBranch(chatId, item.siblings[i]!.id)} /> : null}
             <View style={{ flex: 1 }} />
             {showCost && turnUsage.length ? (
@@ -223,6 +241,7 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
           </T>
         </Pressable>
         <IconButton name="create-outline" label="Новый чат" onPress={() => router.navigate((chat?.projectId ? `/?project=${chat.projectId}&n=${Date.now()}` : `/?n=${Date.now()}`) as never)} />
+        {chatId ? <IconButton name="ellipsis-vertical" label="Действия с чатом" onPress={() => setChatMenu(true)} /> : null}
       </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {items.length === 0 ? (
@@ -268,6 +287,7 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
           <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
             <View style={{ backgroundColor: c.card, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: c.border }}>
               <Row first icon="copy-outline" title="Копировать" onPress={() => (void Clipboard.setStringAsync(menu.text), setMenu(null))} />
+              <Row icon="text-outline" title="Выделить текст" onPress={() => (setSelectText(menu.text), setMenu(null))} />
               <Row icon="share-outline" title="Поделиться" onPress={() => (void Share.share({ message: menu.text }), setMenu(null))} />
               {menu.item.kind === 'user' ? <Row icon="pencil" title="Редактировать и отправить" onPress={() => (setEdit({ id: (menu.item as Extract<Item, { kind: 'user' }>).msg.id, text: menu.text }), setMenu(null))} /> : null}
               {menu.item.kind === 'assistant' && menu.item.userId ? (
@@ -314,6 +334,39 @@ export function ChatScreen({ chatId: initialChatId, projectId }: { chatId: strin
             </View>
           </View>
         ) : null}
+      </Sheet>
+
+      <Sheet visible={selectText !== null} onClose={() => setSelectText(null)} title="Выделите текст" full>
+        <ScrollView style={{ paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 24 }}>
+          <Text selectable style={{ color: c.text, fontSize: 16, lineHeight: 24 }}>
+            {selectText}
+          </Text>
+        </ScrollView>
+      </Sheet>
+
+      <Sheet visible={chatMenu} onClose={() => setChatMenu(false)} title={chat?.title}>
+        <View style={{ paddingHorizontal: 16 }}>
+          <View style={{ backgroundColor: c.card, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: c.border }}>
+            <Row
+              first
+              icon="document-text-outline"
+              title="Экспорт в Markdown"
+              onPress={() => {
+                setChatMenu(false);
+                if (chatId) shareChatMarkdown(chatId).catch((e: Error) => Alert.alert('Ошибка', e.message));
+              }}
+            />
+            <Row
+              icon="copy-outline"
+              title="Скопировать весь чат"
+              onPress={() => {
+                setChatMenu(false);
+                if (chatId) void chatToMarkdown(chatId).then((r) => Clipboard.setStringAsync(r.markdown));
+              }}
+            />
+            <Row icon="sparkles-outline" title="Сменить модель" onPress={() => (setChatMenu(false), setPicker(true))} />
+          </View>
+        </View>
       </Sheet>
 
       <Sheet visible={!!edit} onClose={() => setEdit(null)} title="Редактировать сообщение">

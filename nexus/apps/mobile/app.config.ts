@@ -39,8 +39,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.USE_BIOMETRIC',
       'android.permission.REQUEST_INSTALL_PACKAGES',
       'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.RECORD_AUDIO',
     ],
-    blockedPermissions: ['android.permission.RECORD_AUDIO', 'android.permission.SYSTEM_ALERT_WINDOW', 'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.WRITE_CONTACTS'],
+    blockedPermissions: ['android.permission.SYSTEM_ALERT_WINDOW', 'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.WRITE_CONTACTS'],
   },
   ios: {
     bundleIdentifier: 'app.nexus.ai',
@@ -74,6 +75,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           enableShrinkResourcesInReleaseBuilds: true,
           buildArchs: ['arm64-v8a', 'armeabi-v7a'],
         },
+      },
+    ],
+    [
+      'expo-speech-recognition',
+      {
+        microphonePermission: 'Микрофон нужен для голосового ввода сообщений.',
+        speechRecognitionPermission: 'Распознавание речи для голосового ввода.',
+        androidSpeechServicePackages: ['com.google.android.googlequicksearchbox', 'com.google.android.as'],
       },
     ],
     './plugins/withAndroidRelease',

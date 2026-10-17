@@ -19,7 +19,7 @@ import { create } from 'zustand';
 import { settings } from '@/store/settings';
 import { useApprovals } from '@/store/approvals';
 import { appFetch } from './net';
-import { PHONE_TOOLS } from './phoneTools';
+import { PHONE_TOOLS, SAFE_BY_DEFAULT } from './phoneTools';
 import * as repo from './repo';
 import { RELAY_TOKEN, getSecret, getSecretJson, mcpSecretName, setSecretJson } from './secure';
 
@@ -191,7 +191,7 @@ export async function buildToolset(opts: { serverIds?: string[] | null; chatAllo
     if (invalid) return { content: `Некорректные аргументы: ${invalid}`, isError: true };
 
     const prefKey = `${ref.serverId}|${ref.toolName}`;
-    const approval = prefs.get(prefKey)?.approval ?? 'ask';
+    const approval = prefs.get(prefKey)?.approval ?? (ref.serverId === PHONE_SERVER_ID && SAFE_BY_DEFAULT.has(ref.toolName) ? 'always' : 'ask');
     if (approval !== 'always' && !opts.chatAllowed.has(prefKey)) {
       const d = await useApprovals.getState().request({ callId: call.id, serverName: ref.serverName, toolTitle: ref.title, args: call.input ?? {}, destructive: ref.destructive }, signal);
       if (d === 'deny') return { content: 'Пользователь отклонил вызов инструмента', isError: true };

@@ -35,6 +35,14 @@ export default function ChatSettings() {
         <Row title="Вибрация" right={<Toggle value={s.haptics} onChange={(v) => void s.set('haptics', v)} />} />
       </Section>
 
+      <Section title="Озвучка ответов" footer="Кнопка 🔊 под ответом читает его вслух голосом системы Android.">
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', padding: 14 }}>
+          {[0.8, 1, 1.2, 1.5, 2].map((r) => (
+            <Chip key={r} label={`${r}×`} active={s.ttsRate === r} onPress={() => void s.set('ttsRate', r)} />
+          ))}
+        </View>
+      </Section>
+
       <Section title="Параметры генерации" footer="Пусто — значения модели по умолчанию. Некоторые модели (рассуждающие, Claude 5) игнорируют или не принимают температуру.">
         <View style={{ padding: 12, gap: 8 }}>
           <T v="small">Температура</T>

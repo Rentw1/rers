@@ -97,6 +97,14 @@ export default function RootLayout() {
     void SystemUI.setBackgroundColorAsync(c.bg).catch(() => undefined);
   }, [c.bg]);
 
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((r) => {
+      const chatId = (r.notification.request.content.data as { chatId?: string } | undefined)?.chatId;
+      if (chatId) router.navigate(`/chat/${chatId}` as never);
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!ready) return null;
   if (fatal) {
     return (

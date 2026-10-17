@@ -8,6 +8,7 @@ import type { Attachment } from '@/lib/engine';
 import { allPrompts, allResources, getPromptText, readResourceText } from '@/lib/mcp';
 import { radius, useTheme } from '@/lib/theme';
 import { Icon, IconButton, Row, Sheet, T, tap } from './ui';
+import { useVoiceInput } from './useVoiceInput';
 
 const MAX_IMAGE_B64 = 6_000_000;
 const MAX_TEXT = 400_000;
@@ -36,6 +37,7 @@ export function Composer({
   const [menu, setMenu] = useState(false);
   const [picker, setPicker] = useState<null | { kind: 'resource' | 'prompt'; items: { key: string; title: string; subtitle: string; run: () => Promise<void> }[] }>(null);
   const [height, setHeight] = useState(40);
+  const voice = useVoiceInput(() => text, setText);
 
   const add = (a: Attachment[]) => setAtts((prev) => [...prev, ...a].slice(0, 10));
 
@@ -130,6 +132,7 @@ export function Composer({
 
   const send = async () => {
     if (running) return onStop();
+    if (voice.listening) voice.stop();
     if (!text.trim() && !atts.length) return;
     const t = text;
     const a = atts;
@@ -175,7 +178,7 @@ export function Composer({
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder="Напишите сообщение…"
+          placeholder={voice.listening ? 'Говорите…' : 'Напишите сообщение…'}
           placeholderTextColor={c.textFaint}
           multiline
           onContentSizeChange={(e) => setHeight(Math.min(Math.max(40, e.nativeEvent.contentSize.height), 160))}
@@ -191,6 +194,14 @@ export function Composer({
             <Icon name="chevron-down" size={14} color={c.textMuted} />
           </Pressable>
           <View style={{ flex: 1 }} />
+          {!running ? (
+            <IconButton
+              name={voice.listening ? 'mic' : 'mic-outline'}
+              label={voice.listening ? 'Остановить диктовку' : 'Голосовой ввод'}
+              color={voice.listening ? c.danger : c.textMuted}
+              onPress={voice.toggle}
+            />
+          ) : null}
           <Pressable
             onPress={() => {
               tap();

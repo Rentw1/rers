@@ -1,5 +1,8 @@
 import * as Haptics from 'expo-haptics';
-import { runAgent, isAbort, messageText, type Block, type ChatMessage, type ToolCallBlock, type Usage } from '@nexus/core';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import * as Notifications from 'expo-notifications';
+import { AppState } from 'react-native';
+import { runAgent, isAbort, messageText, estimateTokens, trimHistory, type Block, type ChatMessage, type ToolCallBlock, type Usage } from '@nexus/core';
 import { runtime, type LiveBlock } from '@/store/chat';
 import { useApprovals } from '@/store/approvals';
 import { settings } from '@/store/settings';
@@ -140,20 +143,30 @@ async function generate(chatId: string, parentId: string): Promise<void> {
 
   try {
     const all = await repo.listMessages(chatId);
-    const history = pathTo(all, parentId).map(toChatMessage);
+    const fullHistory = pathTo(all, parentId).map(toChatMessage);
     const model = await resolveModel(chat.providerId, chat.modelId);
     const llm = await getLLM(chat.providerId);
     const project = chat.projectId ? await repo.getProject(chat.projectId) : null;
     const allowed = chatAllowances.get(chatId) ?? new Set<string>();
     chatAllowances.set(chatId, allowed);
     const toolset = model.tools === false ? null : await buildToolset({ serverIds: project?.mcpServerIds ?? null, chatAllowed: allowed });
-    if (toolset?.errors.length) runtime.setNotices(chatId, toolset.errors);
+    const notices = [...(toolset?.errors ?? [])];
     const s = settings();
+    const system = await systemPrompt(chat, toolset?.specs.map((t) => t.name) ?? []);
+    // Keep the request inside the model's context window: drop the oldest whole turns if needed.
+    const contextWindow = model.contextWindow ?? 64_000;
+    const reserve = Math.min(s.maxOutputTokens ?? model.maxOutput ?? 8_192, Math.floor(contextWindow / 4));
+    const budget = Math.floor(contextWindow * 0.9) - reserve;
+    const fixed = estimateTokens(system) + estimateTokens(JSON.stringify(toolset?.specs ?? []));
+    const { messages: history, dropped } = trimHistory(fullHistory, budget, fixed);
+    if (dropped) notices.push(`Начало диалога (${dropped} сообщ.) не отправлено модели: не помещается в контекст ${Math.round(contextWindow / 1000)}K. Начните новый чат или выберите модель с большим контекстом.`);
+    if (notices.length) runtime.setNotices(chatId, notices);
+    void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
 
     await runAgent({
       provider: llm,
       model: chat.modelId,
-      system: await systemPrompt(chat, toolset?.specs.map((t) => t.name) ?? []),
+      system,
       history,
       tools: toolset?.specs ?? [],
       maxOutputTokens: s.maxOutputTokens ?? model.maxOutput ?? undefined,
@@ -206,6 +219,7 @@ async function generate(chatId: string, parentId: string): Promise<void> {
       else if (res.stopReason === 'max_tokens' && res.detail) runtime.setError(chatId, res.detail);
     });
     if (settings().haptics) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void notifyIfBackground(chatId, chat.title);
   } catch (e) {
     await chain;
     if (!isAbort(e) && !ctrl.signal.aborted) {
@@ -213,6 +227,7 @@ async function generate(chatId: string, parentId: string): Promise<void> {
       if (settings().haptics) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   } finally {
+    deactivateKeepAwake(KEEP_AWAKE_TAG);
     useApprovals.getState().denyAll();
     live.end();
     runtime.setRunning(chatId, undefined);
@@ -220,6 +235,26 @@ async function generate(chatId: string, parentId: string): Promise<void> {
     runtime.bumpList();
     void notifyBudgets();
     void maybeTitle(chatId);
+  }
+}
+
+const KEEP_AWAKE_TAG = 'nexus-generation';
+
+/** Tells the user the answer is ready when they switched away while it was generating. */
+async function notifyIfBackground(chatId: string, title: string): Promise<void> {
+  if (AppState.currentState === 'active') return;
+  try {
+    const perm = await Notifications.getPermissionsAsync();
+    if (!perm.granted) return;
+    const chat = await repo.getChat(chatId);
+    const leaf = chat?.activeLeafId ? (await repo.listMessages(chatId)).find((m) => m.id === chat.activeLeafId) : undefined;
+    const text = leaf ? messageText(toChatMessage(leaf)).replace(/[#*`_>|-]+/g, ' ').replace(/\s+/g, ' ').trim() : '';
+    await Notifications.scheduleNotificationAsync({
+      content: { title: chat?.title && chat.title !== DEFAULT_TITLE ? chat.title : title || 'Nexus', body: text ? text.slice(0, 160) : 'Ответ готов', data: { chatId } },
+      trigger: null,
+    });
+  } catch {
+    // notifications are best effort
   }
 }
 

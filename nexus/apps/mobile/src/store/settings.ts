@@ -24,6 +24,8 @@ export interface SettingsState {
   fx: { RUB: number; EUR: number; updatedAt: number } | null;
   pricesSyncedAt: number;
   updateCheckedAt: number;
+  notifAsked: boolean;
+  ttsRate: number;
   load: () => Promise<void>;
   set: <K extends keyof Persisted>(key: K, value: Persisted[K]) => Promise<void>;
 }
@@ -51,6 +53,8 @@ const DEFAULTS: Persisted = {
   fx: null,
   pricesSyncedAt: 0,
   updateCheckedAt: 0,
+  notifAsked: false,
+  ttsRate: 1,
 };
 
 export const useSettings = create<SettingsState>((set) => ({
