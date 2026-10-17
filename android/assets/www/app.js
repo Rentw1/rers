@@ -428,7 +428,8 @@ async function resolveImage(word, tr) {
     const cached = await idbGet(key);
     const gk = S.gemKey || (S.prov === 'gemini' ? S.key : '');
     if (cached) url = cached;
-    else if (gk) {
+    else if (!gk) lastImgError = 'Gemini: не указан API-ключ';
+    else {
       const body = { contents: [{ parts: [{ text: geminiPrompt(word) }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '1:1' } } };
       const r = await http('POST', `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(S.gemModel || 'gemini-2.5-flash-image')}:generateContent`, { 'Content-Type': 'application/json', 'x-goog-api-key': gk }, JSON.stringify(body), 180000);
       if (r.ok) {
@@ -438,7 +439,7 @@ async function resolveImage(word, tr) {
           if (im && im.data) url = `data:${im.mimeType || im.mime_type || 'image/png'};base64,${im.data}`;
         } catch (e) { url = null; }
         if (url) await idbSet(key, url);
-      } else if (!resolveImage._warned) { resolveImage._warned = 1; toast('Gemini: ' + geminiErr(r), 7000); }
+      } else { lastImgError = 'Gemini: ' + geminiErr(r); if (!resolveImage._warned) { resolveImage._warned = 1; toast(lastImgError, 7000); } }
     }
   } else if (S.img === 'arasaac') {
     const ids = store.get('arasaac', {});
@@ -446,7 +447,7 @@ async function resolveImage(word, tr) {
       const r = await http('GET', 'https://api.arasaac.org/v1/pictograms/ru/search/' + encodeURIComponent(word), {}, '', 20000);
       let id = 0;
       if (r.ok) { try { const j = JSON.parse(r.body); if (Array.isArray(j) && j.length) id = j[0]._id; } catch (e) { id = 0; } }
-      if (r.ok || r.status === 404) { ids[word] = id; store.set('arasaac', ids); }
+      if (r.ok || r.status === 404) { ids[word] = id; store.set('arasaac', ids); } else lastImgError = 'ARASAAC: ' + parseErr(r);
     }
     if (ids[word]) url = `https://static.arasaac.org/pictograms/${ids[word]}/${ids[word]}_300.png`;
   } else if (S.img === 'pollinations') {
@@ -467,13 +468,14 @@ async function resolveImage(word, tr) {
           else if (d.url) { const b = await http('GET', d.url, {}, '', 60000, true); url = b.ok ? b.body : d.url; }
         } catch (e) { url = null; }
         if (url) await idbSet(key, url);
-      } else if (!resolveImage._warned) { resolveImage._warned = 1; toast('Картинки: ' + parseErr(r), 5000); }
+      } else { lastImgError = 'Картинки: ' + parseErr(r); if (!resolveImage._warned) { resolveImage._warned = 1; toast(lastImgError, 5000); } }
     }
   }
   imgMem[key] = url;
   return url;
 }
 let hydrateRun = 0;
+let lastImgError = '';
 async function hydratePics(root) {
   const run = ++hydrateRun;
   const els = Array.from(root.querySelectorAll('.pic[data-q]'));
@@ -482,24 +484,38 @@ async function hydratePics(root) {
   if (!words.length) return;
   const tr = (S.img === 'pollinations' || S.img === 'openai') ? await translateWords(words) : (w => w);
   const queue = words.slice();
-  const apply = (w, url) => {
+  const loadOnce = url => new Promise(res => {
+    const im = new Image();
+    const t = setTimeout(() => { im.src = ''; res(null); }, 90000);
+    im.onload = () => { clearTimeout(t); res(im.naturalWidth > 0 ? url : null); };
+    im.onerror = () => { clearTimeout(t); res(null); };
+    im.src = url;
+  });
+  const apply = async (w, url) => {
     if (!url || run !== hydrateRun) return;
+    let ok = url.startsWith('data:') ? url : await loadOnce(url);
+    if (!ok && S.img === 'pollinations') { await new Promise(r => setTimeout(r, 6000)); ok = await loadOnce(url); }
+    if (!ok) {
+      lastImgError = `Сервис не вернул картинку для «${w}». Проверьте интернет${S.img === 'pollinations' ? ' и ссылку/токен Pollinations (бесплатный режим медленный, возможны отказы)' : ''}.`;
+      Object.keys(imgMem).filter(k => k.endsWith('|' + w)).forEach(k => delete imgMem[k]);
+      return;
+    }
+    if (run !== hydrateRun) return;
     root.querySelectorAll(`.pic[data-q="${CSS.escape(w)}"]`).forEach(e => {
-      const emo = e.querySelector('.emo');
       const old = e.querySelector('img');
-      if (old) { old.src = url; return; }
+      if (old) { old.src = ok; return; }
+      const emo = e.querySelector('.emo');
       if (!emo) return;
-      const img = new Image();
+      const img = document.createElement('img');
       img.alt = w;
-      img.loading = 'lazy';
-      img.onload = () => { if (emo.parentNode) emo.replaceWith(img); };
-      img.src = url;
+      img.src = ok;
+      emo.replaceWith(img);
     });
   };
-  const workers = Array.from({ length: S.img === 'openai' || S.img === 'gemini' ? 2 : 4 }, async () => {
+  const workers = Array.from({ length: S.img === 'pollinations' ? 1 : S.img === 'openai' || S.img === 'gemini' ? 2 : 4 }, async () => {
     while (queue.length && run === hydrateRun) {
       const w = queue.shift();
-      try { apply(w, await resolveImage(w, tr)); } catch (e) { /* эмодзи остаётся */ }
+      try { await apply(w, await resolveImage(w, tr)); } catch (e) { lastImgError = e.message; }
     }
   });
   await Promise.all(workers);
@@ -735,15 +751,19 @@ async function testAi() {
 }
 async function testImg() {
   if (S.img === 'emoji') { $('#imgTestOut').innerHTML = '<p class="note">Выбран режим эмодзи: картинки без интернета.</p>'; return; }
-  busy(true, 'Получаю картинку…');
+  busy(true, 'Получаю картинку… (до 1–2 минут)');
   try {
     Object.keys(imgMem).forEach(k => delete imgMem[k]);
-    if (S.img === 'gemini' && !(S.gemKey || (S.prov === 'gemini' && S.key))) { busy(false); $('#imgTestOut').innerHTML = '<p class="note">❌ Вставьте API-ключ Gemini.</p>'; return; }
-    resolveImage._warned = 0;
-    const tr = (S.img === 'pollinations' || S.img === 'openai') ? await translateWords(['яблоко']) : (w => w);
-    const url = await resolveImage('яблоко', tr);
+    resolveImage._warned = 1;
+    lastImgError = '';
+    const word = 'яблоко';
+    const tr = (S.img === 'pollinations' || S.img === 'openai') ? await translateWords([word]) : (w => w);
+    const url = await resolveImage(word, tr);
+    const ok = url ? (url.startsWith('data:') ? url : await new Promise(res => { const im = new Image(); const t = setTimeout(() => res(null), 90000); im.onload = () => { clearTimeout(t); res(url); }; im.onerror = () => { clearTimeout(t); res(null); }; im.src = url; })) : null;
     busy(false);
-    $('#imgTestOut').innerHTML = url ? `<img src="${esc(url)}" alt="яблоко" onerror="this.replaceWith(document.createTextNode('❌ Картинка не загрузилась — проверьте ссылку/ключ'))">` : '<p class="note">❌ Не удалось получить картинку. Проверьте интернет, ссылку и ключ.</p>';
+    resolveImage._warned = 0;
+    $('#imgTestOut').innerHTML = ok ? `<p class="note">✅ Работает</p><img src="${esc(ok)}" alt="${word}">`
+      : `<p class="note">❌ ${esc(lastImgError || (url ? 'Картинка не загрузилась: сервис недоступен или отклонил запрос.' : 'Не удалось получить картинку. Проверьте интернет, ключ и VPN.'))}</p>`;
   } catch (e) { busy(false); $('#imgTestOut').textContent = '❌ ' + e.message; }
 }
 
