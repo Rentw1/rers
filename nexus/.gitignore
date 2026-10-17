@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-bundle/
+*.keystore
+.env*
+coverage/
+!apps/mobile/signing/nexus-shared.keystore
+release/
