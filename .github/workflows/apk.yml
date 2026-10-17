@@ -1,0 +1,16 @@
+name: Build APK
+on:
+  push:
+    paths: ['android/**', '.github/workflows/apk.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y aapt dalvik-exchange zipalign apksigner
+      - run: OUT_DIR=$PWD/out ./android/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Konstruktor-DOU-apk
+          path: out/*.apk
